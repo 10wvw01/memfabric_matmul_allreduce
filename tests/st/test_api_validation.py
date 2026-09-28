@@ -39,20 +39,21 @@ def main() -> None:
             )
 
     # M=0 is a legal no-op contract: addresses may be null and phase1 still
-    # returns a zero-workspace executor. Do not call phase2 here because this
-    # smoke intentionally requires no NPU context.
+    # returns a zero-workspace executor. Execute phase2 with a non-null sentinel
+    # stream; Execute(rows=0) returns before touching the stream, while phase2
+    # still takes ownership of and deletes the executor.
     ret, workspace, executor = _phase1(api, 0, 0, 2)
     if ret != 0 or workspace != 0 or executor == 0:
         raise AssertionError(
             f"M=0 contract failed: ret={ret} workspace={workspace} executor={executor}"
         )
-    # Avoid leaking the test executor: phase2 owns executor deletion, but a
-    # real stream is intentionally absent here. Call libc++ delete is not part
-    # of the public ABI, so the M=0 positive case is covered by functional ST.
-    # This process exits immediately after the smoke, making the one executor
-    # allocation bounded and harmless.
+    phase2_ret = api.stage2(
+        None, 0, ctypes.c_void_p(executor), ctypes.c_void_p(1)
+    )
+    if phase2_ret != 0:
+        raise AssertionError(f"M=0 phase2 no-op failed: ret={phase2_ret}")
 
-    print("PASS ACLNN phase1 validation rejects invalid rank/q/address inputs")
+    print("PASS ACLNN phase1 validation and M=0 no-op contract")
 
 
 if __name__ == "__main__":
