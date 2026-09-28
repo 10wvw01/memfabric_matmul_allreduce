@@ -50,13 +50,37 @@ class Mfmc2Api:
         self.acl.aclrtDestroyStream.restype = ctypes.c_int
 
     @staticmethod
-    def _find_op_lib() -> Path:
-        roots = [Path(p) for p in os.environ.get("ASCEND_CUSTOM_OPP_PATH", "").split(":") if p]
+    def _candidate_libs() -> list[Path]:
+        candidates: list[Path] = []
+        for item in os.environ.get("ASCEND_CUSTOM_OPP_PATH", "").split(":"):
+            if not item:
+                continue
+            root = Path(item)
+            # CANN 9.1 accepts either an installed vendor root or, for dynamic
+            # operator libraries, a direct .../op_api/lib entry.
+            candidates.extend(
+                [
+                    root / "op_api" / "lib" / "libcust_opapi.so",
+                    root / "libcust_opapi.so",
+                    root / "vendors" / "memfabric_mc2" / "op_api" / "lib" / "libcust_opapi.so",
+                ]
+            )
         opp = os.environ.get("ASCEND_OPP_PATH")
         if opp:
-            roots.append(Path(opp) / "vendors" / "memfabric_mc2")
-        for root in roots:
-            candidate = root / "op_api" / "lib" / "libcust_opapi.so"
+            candidates.append(
+                Path(opp)
+                / "vendors"
+                / "memfabric_mc2"
+                / "op_api"
+                / "lib"
+                / "libcust_opapi.so"
+            )
+        seen: set[Path] = set()
+        return [p for p in candidates if not (p in seen or seen.add(p))]
+
+    @classmethod
+    def _find_op_lib(cls) -> Path:
+        for candidate in cls._candidate_libs():
             if candidate.is_file():
                 return candidate
         raise RuntimeError(
