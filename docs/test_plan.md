@@ -4,9 +4,10 @@
 
 - build/package/install：CANN 9.1.0 + 310P3，产出并安装 custom OPP；
 - `check_install.py`：`libcust_opapi.so` / bundled `libmf_smem.so` / ELF closure / runtime ABI；
+- `test_api_validation.py`：ACLNN phase-1 非法 rank/q/address 拒绝、M=0 no-op；
 - TP=2 rank0/rank1 均可初始化、调用、销毁；
 - q=1/2/4；
-- M 边界：255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2048, 4096, 6144, 8192；
+- M 边界：1, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025, 2048, 4096, 6144, 8192；
 - tail、multiple batches、multiple waves；
 - repeated >=1000、mixed-M；
 - eager single-stream；
@@ -17,9 +18,11 @@
 
 ```text
 tests/st/check_install.py
+tests/st/test_api_validation.py
 tests/st/test_data_path_accuracy.py
 tests/st/test_two_rank_accuracy.py
 tests/st/test_repeated_stability.py
+tests/run_real_machine_gate.sh
 ```
 
 ## 2. 计算/通信数据准确性
@@ -33,7 +36,7 @@ tests/st/test_repeated_stability.py
 - source rank 的 fused output == source local stock MM：验证 local MM / send arena / zero-peer reduce；
 - peer rank 的 fused output == source local stock MM：验证 peer SDMA payload / wait / peer reduce；
 - source_rank=0/1 双向执行，避免只验证一个 SDMA 方向；
-- 覆盖 q=1/2/4 与 batch/tail 临界 M。
+- 覆盖 q=1/2/4、M=1 与 batch/tail 临界 M。
 
 这样不需要向生产 runtime 增加测试专用的 arena 导出 ABI，同时能够把“本地计算错误”和“跨 die payload 错误”分别定位。
 
@@ -60,7 +63,7 @@ A = stock FP16 NZ MatMul + HCCL AllReduce
 B = MemFabricMatmulAllReduce custom OPP
 ```
 
-`tests/perf/bench_two_rank.py` 默认覆盖 M=512,1024,2048,4096,6144,8192，支持 q=1/2/4、warmup/iters 参数。TP collective 按较慢 rank 报告 median/p95，避免挑选快 rank。
+`tests/perf/bench_two_rank.py` 默认覆盖 M=512,1024,2048,4096,6144,8192，支持 q=1/2/4、warmup/iters 参数。TP collective 按较慢 rank 报告 median/p95，避免挑选快 rank；stock/fused 都把 caller-visible output allocation 纳入 timed call。
 
 必须补 CANN profiler：
 
@@ -88,15 +91,29 @@ B = MemFabricMatmulAllReduce custom OPP
 
 ## 6. 实机执行顺序
 
+独立算子阶段可以直接执行：
+
+```bash
+bash tests/run_real_machine_gate.sh
+```
+
+其固定顺序为：
+
 ```text
-build .run
--> install + check_install
+static UT
+-> install/ELF/API/ABI
+-> ACLNN parameter smoke
 -> isolated local-MM/peer-payload accuracy
 -> q=2 final correctness matrix
 -> q=1/4 final correctness
 -> repeated 1000 / mixed-M
 -> standalone stock-vs-fused benchmark
--> CANN profiler
+```
+
+随后继续：
+
+```text
+CANN profiler
 -> vllm feature-off / OPP-missing fallback
 -> Qwen eager
 -> explicit fused eager warmup
