@@ -18,7 +18,12 @@ def candidate_op_libs() -> list[Path]:
             [
                 root / "op_api" / "lib" / "libcust_opapi.so",
                 root / "libcust_opapi.so",
-                root / "vendors" / "memfabric_mc2" / "op_api" / "lib" / "libcust_opapi.so",
+                root
+                / "vendors"
+                / "memfabric_mc2"
+                / "op_api"
+                / "lib"
+                / "libcust_opapi.so",
             ]
         )
     opp = os.environ.get("ASCEND_OPP_PATH")
@@ -60,15 +65,44 @@ def require_ldd_clean(path: Path) -> None:
     print(proc.stdout.rstrip())
 
 
+def require_relocatable_needed(path: Path) -> None:
+    proc = subprocess.run(
+        ["readelf", "-d", str(path)],
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"readelf failed for {path}:\n{proc.stdout}")
+    for line in proc.stdout.splitlines():
+        if "(NEEDED)" not in line:
+            continue
+        left = line.find("[")
+        right = line.find("]", left + 1)
+        if left < 0 or right < 0:
+            continue
+        needed = line[left + 1 : right]
+        if needed.startswith("/"):
+            raise RuntimeError(
+                f"non-relocatable DT_NEEDED in {path}: {needed}. "
+                "The installed OPP must not depend on a build-machine path."
+            )
+
+
 def main() -> None:
     op_lib = find_op_lib()
     lib_dir = op_lib.parent
     mf_lib = lib_dir / "libmf_smem.so"
+    device_lib = lib_dir / "libmfmc2_device.so"
     if not mf_lib.is_file():
         raise RuntimeError(f"bundled public MemFabric runtime missing: {mf_lib}")
+    if not device_lib.is_file():
+        raise RuntimeError(f"packaged device pipeline missing: {device_lib}")
 
-    require_ldd_clean(mf_lib)
-    require_ldd_clean(op_lib)
+    for path in (device_lib, mf_lib, op_lib):
+        require_relocatable_needed(path)
+        require_ldd_clean(path)
 
     lib = ctypes.CDLL(str(op_lib), mode=ctypes.RTLD_GLOBAL)
     required = [
@@ -92,6 +126,7 @@ def main() -> None:
     print(f"PASS op_lib={op_lib}")
     print(f"PASS runtime_abi={actual}")
     print("PASS all direct ELF dependencies resolved")
+    print("PASS no absolute DT_NEEDED entries")
     print(
         "NOTE: this checks shared-library closure. The following real-hardware "
         "functional ST still verifies MemFabric 310P AICPU/orchestrator deployment."
