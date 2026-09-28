@@ -50,6 +50,20 @@ def test_cann91_run_packaging_is_the_only_build_path():
     assert build.index(binary_cmd) < build.index(package_cmd)
 
 
+def test_packaged_shared_libraries_are_relocatable():
+    cmake = _text("CMakeLists.txt")
+    install_check = _text("tests/st/check_install.py")
+    assert "-Wl,-soname,libmfmc2_device.so" in cmake
+    assert "target_link_libraries(cust_opapi PRIVATE\n  mfmc2_device\n  mf_smem" in cmake
+    assert 'INSTALL_RPATH "$ORIGIN"' in cmake
+    assert 'FILES "${MFMC2_DEVICE_LIBRARY}"' in cmake
+    assert 'FILES "${MFMC2_MEMFABRIC_LIBRARY}"' in cmake
+    assert "require_relocatable_needed" in install_check
+    assert 'needed.startswith("/")' in install_check
+    assert "libmfmc2_device.so" in install_check
+    assert "libmf_smem.so" in install_check
+
+
 def test_public_api_has_aclnn_two_phase_contract():
     header = _text("include/aclnn_mem_fabric_matmul_all_reduce.h")
     assert "aclnnMemFabricMatmulAllReduceGetWorkspaceSize" in header
