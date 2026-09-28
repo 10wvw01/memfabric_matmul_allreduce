@@ -3,25 +3,97 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _text(rel: str) -> str:
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
 def test_required_project_files_exist():
     required = [
         "CMakeLists.txt",
-        "op_host/memfabric_matmul_allreduce_def.cpp",
-        "op_host/memfabric_matmul_allreduce_tiling.cpp",
-        "op_kernel/memfabric_matmul_allreduce.cpp",
+        "CMakePresets.json",
+        "build.sh",
+        "include/aclnn_mem_fabric_matmul_all_reduce.h",
+        "op_api/aclnn_mem_fabric_matmul_all_reduce.cpp",
+        "op_kernel/memfabric310p_device.asc",
+        "runtime/memfabric310p_adapter.cpp",
+        "runtime/memfabric310p_adapter_api.h",
         "runtime/memfabric_runtime.cpp",
+        "runtime/memfabric_runtime.h",
+        "tests/st/test_two_rank_accuracy.py",
+        "tests/perf/bench_two_rank.py",
         "docs/design.md",
         "docs/test_plan.md",
+        "docs/review_report.md",
     ]
     for rel in required:
-        assert (ROOT / rel).exists(), rel
+        assert (ROOT / rel).is_file(), rel
 
 
-def test_v1_contract_is_model_agnostic():
-    text = (ROOT / "include/memfabric_matmul_allreduce_contract.h").read_text()
-    lowered = text.lower()
-    assert "qwen" not in lowered
-    assert "o_proj" not in lowered
-    assert "kLocalK = 2048" in text
-    assert "kN = 2048" in text
-    assert "kWorldSize = 2" in text
+def test_cann91_run_packaging_is_the_only_build_path():
+    cmake = _text("CMakeLists.txt")
+    assert "find_package(ASC REQUIRED" in cmake
+    assert "npu_op_package(${package_name}" in cmake
+    assert "TYPE RUN" in cmake
+    assert "npu_op_library(cust_opapi ACLNN" in cmake
+    assert "PACKAGE_PATH \"op_api/lib\"" in cmake
+    assert "--npu-arch=dav-2002" in cmake
+
+
+def test_public_api_has_aclnn_two_phase_contract():
+    header = _text("include/aclnn_mem_fabric_matmul_all_reduce.h")
+    assert "aclnnMemFabricMatmulAllReduceGetWorkspaceSize" in header
+    assert "aclnnMemFabricMatmulAllReduce(" in header
+    assert "mfmc2RuntimeAbiVersion" in header
+    assert "mfmc2RuntimeShutdown" in header
+
+
+def test_operator_has_no_vllm_or_torch_dependency():
+    for rel in [
+        "op_api/aclnn_mem_fabric_matmul_all_reduce.cpp",
+        "runtime/memfabric_runtime.cpp",
+        "runtime/memfabric310p_adapter.cpp",
+        "op_kernel/memfabric310p_device.asc",
+    ]:
+        lowered = _text(rel).lower()
+        assert "vllm" not in lowered, rel
+        assert "torch/" not in lowered, rel
+        assert "torch_npu" not in lowered, rel
+
+
+def test_memfabric_is_consumed_only_through_public_contract():
+    host = _text("runtime/memfabric310p_adapter.cpp")
+    device = _text("op_kernel/memfabric310p_device.asc")
+    assert '#include <smem.h>' in host
+    assert '#include <smem_shm.h>' in host
+    assert '"smem_shm_aicore_base_sdma.h"' in device
+    assert "smem_shm_sdma_signal" in device
+    assert "smem_shm_sdma_wait" in device
+    assert "smem_shm_sdma_quiet" in device
+    forbidden = ("mailbox/", "orchestrator/", "reserved_region", "aicpu/")
+    for token in forbidden:
+        assert token not in host.lower()
+        assert token not in device.lower()
+
+
+def test_v8_data_path_invariants_are_preserved():
+    device = _text("op_kernel/memfabric310p_device.asc")
+    runtime = _text("runtime/memfabric_runtime.cpp")
+    assert "MFMC2_CORES = 8" in device
+    assert "MFMC2_PRODUCER_TILING(256, 256)" in device
+    assert "MFMC2_PRODUCER_TILING(512, 512)" in device
+    assert "MFMC2_PRODUCER_TILING(1024, 1024)" in device
+    assert "CONFIG_NORM" in device
+    assert "kEagerGenerationBase = 0x40000000u" in runtime
+    # Lookahead=1: enqueue next producer before consuming previous batch.
+    assert "EnqueueProducer(batch)" in runtime
+    assert "EnqueueWaitAdd(batch - 1)" in runtime
+    assert runtime.index("EnqueueProducer(batch)") < runtime.index("EnqueueWaitAdd(batch - 1)")
+
+
+def test_accuracy_and_perf_are_independent_of_vllm():
+    accuracy = _text("tests/st/test_two_rank_accuracy.py")
+    perf = _text("tests/perf/bench_two_rank.py")
+    assert "vllm" not in accuracy.lower()
+    assert "vllm" not in perf.lower()
+    assert "torch.equal" in accuracy
+    assert "dist.all_reduce" in perf
