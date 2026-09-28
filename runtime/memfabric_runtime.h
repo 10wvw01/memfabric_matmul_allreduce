@@ -1,23 +1,36 @@
 #pragma once
 
+#include <acl/acl_rt.h>
+#include <cstddef>
 #include <cstdint>
-
-#include "memfabric_matmul_allreduce_contract.h"
 
 namespace memfabric_mc2 {
 
-struct RuntimeConfig {
-    int rank = -1;
-    int world_size = static_cast<int>(kWorldSize);
+constexpr uint32_t kRuntimeAbiVersion = 1u;
+
+struct LaunchParams {
+    uint64_t x = 0;
+    uint64_t weight = 0;
+    uint64_t output = 0;
+    int64_t rows = 0;
+    int32_t rank = -1;
     uint32_t batch_basem_count = 2;
-    uint64_t local_pool_bytes = 96ULL * 1024ULL * 1024ULL;
-    const char* store_url = "tcp://127.0.0.1:8581";
+    bool graph_capturing = false;
 };
 
-// Operator-owned lifecycle. The implementation is process-persistent by V1
-// contract and must be capture-ready before ACL Graph capture starts.
-int EnsureRuntime(const RuntimeConfig& config, void* acl_stream);
-int ShutdownRuntime();
-bool RuntimeAvailable();
+// Enqueue one complete local-MM + TP=2 MemFabric SUM wave sequence on stream.
+// Host/runtime initialization is allowed only for eager execution. Graph
+// capture requires an already initialized and warmed process runtime.
+int Execute(const LaunchParams& params, aclrtStream stream);
+
+// Deterministic teardown for eager-only use. After graph capture has ever been
+// observed the MemFabric pool deliberately remains process-lifetime, matching
+// the proven v8 safety contract.
+int Shutdown();
+
+// Debug/diagnostic helpers exported through libcust_opapi.so.
+uint32_t RuntimeAbiVersion();
+const char* LastError();
+int DebugSnapshot(uint64_t* words, size_t word_count);
 
 }  // namespace memfabric_mc2
