@@ -104,6 +104,7 @@ add_custom_command(
           -L"${_cann_arch_root}/lib64"
           -L"${ASCEND_CANN_PACKAGE_PATH}/lib64"
           -lascendcl -lruntime -ldl -pthread -lm
+          -Wl,-soname,libmfmc2_device.so
           -Wl,-rpath,"${_cann_arch_root}/lib64"
   DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/op_kernel/memfabric310p_device.asc"
   COMMENT "Building dav-2002 MemFabric MC2 device pipeline"
@@ -123,17 +124,21 @@ target_include_directories(cust_opapi PRIVATE
   "${_cann_arch_root}/include"
   "${MFMC2_MEMFABRIC_HOST_INCLUDE}")
 target_link_directories(cust_opapi PRIVATE
+  "${CMAKE_CURRENT_BINARY_DIR}"
   "${ASCEND_CANN_PACKAGE_PATH}/lib64"
   "${_cann_arch_root}/lib64")
+get_filename_component(MFMC2_MEMFABRIC_LIBDIR "${MFMC2_MEMFABRIC_LIBRARY}" DIRECTORY)
+target_link_directories(cust_opapi PRIVATE "${MFMC2_MEMFABRIC_LIBDIR}")
 target_link_libraries(cust_opapi PRIVATE
-  "${MFMC2_DEVICE_LIBRARY}"
-  "${MFMC2_MEMFABRIC_LIBRARY}"
+  mfmc2_device
+  mf_smem
   ascendcl dl pthread)
 set_target_properties(cust_opapi PROPERTIES
-  BUILD_RPATH "$ORIGIN"
+  BUILD_RPATH "$ORIGIN;${MFMC2_MEMFABRIC_LIBDIR}"
   INSTALL_RPATH "$ORIGIN")
 
-# CANN places ACLNN libraries/headers in vendors/<vendor>/op_api/{lib,include}.
+# CANN places custom operator API libraries/headers in
+# vendors/<vendor>/op_api/{lib,include}.
 npu_op_package_add(${package_name} LIBRARY cust_opapi)
 npu_op_package_add(${package_name}
   FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/aclnn_mem_fabric_matmul_all_reduce.h"
