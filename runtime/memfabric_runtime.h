@@ -28,17 +28,9 @@ int Execute(const LaunchParams& params, aclrtStream stream);
 // the proven v8 safety contract.
 int Shutdown();
 
-// Debug/diagnostic helpers exported through libcust_opapi.so. DebugCopyBatch
-// is test-only: after the caller has synchronized the execution stream it
-// copies one arena slot to host buffers so ST can independently verify the
-// local MatMul payload and the peer SDMA payload before reduction.
+// Debug/diagnostic helpers exported through libcust_opapi.so.
 uint32_t RuntimeAbiVersion();
 const char* LastError();
 int DebugSnapshot(uint64_t* words, size_t word_count);
-int DebugCopyBatch(uint32_t batch_index,
-                   uint32_t valid_rows,
-                   void* local_host,
-                   void* peer_host,
-                   size_t bytes);
 
 }  // namespace memfabric_mc2
