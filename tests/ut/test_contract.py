@@ -20,6 +20,7 @@ def test_required_project_files_exist():
         "runtime/memfabric_runtime.cpp",
         "runtime/memfabric_runtime.h",
         "tests/st/check_install.py",
+        "tests/st/test_api_validation.py",
         "tests/st/test_data_path_accuracy.py",
         "tests/st/test_two_rank_accuracy.py",
         "tests/st/test_repeated_stability.py",
@@ -93,19 +94,24 @@ def test_v8_data_path_invariants_are_preserved():
 
 
 def test_accuracy_stability_and_perf_are_independent_of_vllm():
+    api_validation = _text("tests/st/test_api_validation.py")
     accuracy = _text("tests/st/test_two_rank_accuracy.py")
     data_path = _text("tests/st/test_data_path_accuracy.py")
     stability = _text("tests/st/test_repeated_stability.py")
     perf = _text("tests/perf/bench_two_rank.py")
-    for text in (accuracy, data_path, stability, perf):
+    for text in (api_validation, accuracy, data_path, stability, perf):
         assert "vllm" not in text.lower()
+    assert "invalid q" in api_validation
+    assert "M=0" in api_validation
     assert "torch.equal" in accuracy
+    assert "[1, 255, 256, 257" in accuracy
     assert "torch.equal" in data_path
     assert "source_rank" in data_path
     assert "peer-payload" in data_path
     assert "default=1000" in stability
     assert "torch.equal" in stability
     assert "dist.all_reduce" in perf
+    assert "unfair allocator advantage" in perf
 
 
 def test_install_and_st_use_installed_custom_opp():
