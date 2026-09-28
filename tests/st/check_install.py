@@ -8,24 +8,37 @@ from pathlib import Path
 EXPECTED_ABI = 1
 
 
-def candidate_vendor_roots() -> list[Path]:
-    roots: list[Path] = []
+def candidate_op_libs() -> list[Path]:
+    candidates: list[Path] = []
     for item in os.environ.get("ASCEND_CUSTOM_OPP_PATH", "").split(":"):
-        if item:
-            p = Path(item)
-            roots.extend([p, p / "vendors" / "memfabric_mc2"])
+        if not item:
+            continue
+        root = Path(item)
+        candidates.extend(
+            [
+                root / "op_api" / "lib" / "libcust_opapi.so",
+                root / "libcust_opapi.so",
+                root / "vendors" / "memfabric_mc2" / "op_api" / "lib" / "libcust_opapi.so",
+            ]
+        )
     opp = os.environ.get("ASCEND_OPP_PATH")
     if opp:
-        roots.append(Path(opp) / "vendors" / "memfabric_mc2")
-    # Preserve order while removing duplicates.
+        candidates.append(
+            Path(opp)
+            / "vendors"
+            / "memfabric_mc2"
+            / "op_api"
+            / "lib"
+            / "libcust_opapi.so"
+        )
     seen: set[Path] = set()
-    return [p for p in roots if not (p in seen or seen.add(p))]
+    return [p for p in candidates if not (p in seen or seen.add(p))]
 
 
-def find_vendor_root() -> Path:
-    for root in candidate_vendor_roots():
-        if (root / "op_api" / "lib" / "libcust_opapi.so").is_file():
-            return root
+def find_op_lib() -> Path:
+    for candidate in candidate_op_libs():
+        if candidate.is_file():
+            return candidate
     raise RuntimeError(
         "memfabric_mc2 custom OPP not found. Install custom_opp_*.run and "
         "source vendors/memfabric_mc2/bin/set_env.bash before testing."
@@ -48,9 +61,9 @@ def require_ldd_clean(path: Path) -> None:
 
 
 def main() -> None:
-    root = find_vendor_root()
-    op_lib = root / "op_api" / "lib" / "libcust_opapi.so"
-    mf_lib = root / "op_api" / "lib" / "libmf_smem.so"
+    op_lib = find_op_lib()
+    lib_dir = op_lib.parent
+    mf_lib = lib_dir / "libmf_smem.so"
     if not mf_lib.is_file():
         raise RuntimeError(f"bundled public MemFabric runtime missing: {mf_lib}")
 
@@ -76,7 +89,7 @@ def main() -> None:
     if actual != EXPECTED_ABI:
         raise RuntimeError(f"runtime ABI mismatch: expected={EXPECTED_ABI}, got={actual}")
 
-    print(f"PASS vendor_root={root}")
+    print(f"PASS op_lib={op_lib}")
     print(f"PASS runtime_abi={actual}")
     print("PASS all direct ELF dependencies resolved")
     print(
