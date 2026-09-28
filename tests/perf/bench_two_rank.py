@@ -43,17 +43,28 @@ def _worker(rank: int, q: int, shapes: list[int], warmup: int, iters: int,
         rows = []
         for m in shapes:
             x, w_nz = _make_inputs(rank, m)
-            fused_out = torch.empty((m, N), dtype=torch.float16, device=f"npu:{rank}")
             torch.npu.synchronize()
 
             def stock_once():
+                # F.linear owns its output allocation; keep it inside the timed
+                # call so caller-visible latency matches the vLLM path.
                 y = torch.nn.functional.linear(x, w_nz)
                 dist.all_reduce(y, op=dist.ReduceOp.SUM)
                 torch.npu.synchronize()
+                return y
 
             def fused_once():
-                api.launch(x.data_ptr(), w_nz.data_ptr(), m, rank, q,
-                           fused_out.data_ptr(), stream, synchronize=True)
+                # The vLLM thin adapter allocates output immediately before the
+                # ACLNN call. Do the same here; a permanently preallocated
+                # output would give fused an unfair allocator advantage.
+                y = torch.empty(
+                    (m, N), dtype=torch.float16, device=f"npu:{rank}"
+                )
+                api.launch(
+                    x.data_ptr(), w_nz.data_ptr(), m, rank, q,
+                    y.data_ptr(), stream, synchronize=True
+                )
+                return y
 
             for _ in range(warmup):
                 stock_once()
@@ -102,6 +113,8 @@ def main() -> None:
     parser.add_argument("--shapes", type=int, nargs="*",
                         default=[512, 1024, 2048, 4096, 6144, 8192])
     args = parser.parse_args()
+    if args.warmup < 1 or args.iters < 1:
+        raise ValueError("--warmup and --iters must both be >= 1")
     if os.environ.get("ASCEND_RT_VISIBLE_DEVICES") not in ("0,1", "0, 1"):
         raise RuntimeError("set ASCEND_RT_VISIBLE_DEVICES=0,1")
 
@@ -140,7 +153,10 @@ def main() -> None:
         stock_p95 = max(r["stock_p95_us"] for r in by_m[m])
         fused_p95 = max(r["fused_p95_us"] for r in by_m[m])
         delta = (fused / stock - 1.0) * 100.0
-        print(f"{m},{stock:.3f},{fused:.3f},{delta:+.2f},{stock_p95:.3f},{fused_p95:.3f}")
+        print(
+            f"{m},{stock:.3f},{fused:.3f},{delta:+.2f},"
+            f"{stock_p95:.3f},{fused_p95:.3f}"
+        )
 
 
 if __name__ == "__main__":
