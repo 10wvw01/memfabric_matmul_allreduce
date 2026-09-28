@@ -2,6 +2,10 @@
 
 Ascend 310P3 TP=2 `MatMul + MemFabric AllReduce` MC² custom operator.
 
+## 使用入口
+
+实机部署、独立算子验证以及 vllm-ascend 接入请直接参考：[`docs/usage.md`](docs/usage.md)。
+
 ## V1 contract
 
 - CANN 9.1.0 custom OPP, single `.run` delivery.
@@ -117,4 +121,4 @@ The old `VLLM_ASCEND_310P_MEMFABRIC_STORE_URL` and `VLLM_ASCEND_310P_MEMFABRIC_L
 11. ACL Graph replay;
 12. 10-minute stability and performance regression check.
 
-See `docs/design.md`, `docs/test_plan.md`, `docs/review_report.md`, and `docs/migration_baseline_v8.md`.
+See `docs/usage.md`, `docs/design.md`, `docs/test_plan.md`, `docs/review_report.md`, and `docs/migration_baseline_v8.md`.
