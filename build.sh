@@ -24,7 +24,11 @@ rm -rf "${BUILD_DIR}"
 cmake --preset default \
   -DASCEND_CANN_PACKAGE_PATH="${CANN_PATH}" \
   -DMEMFABRIC_HYBRID_HOME_PATH="${MEMFABRIC_HYBRID_HOME_PATH}"
-cmake --build "${BUILD_DIR}" --target binary package -j"${JOBS}"
+
+# CANN 9.1 custom-operator packaging is intentionally two-phase: first build
+# binary deliverables, then assemble the RUN package from those artifacts.
+cmake --build "${BUILD_DIR}" --target binary -j"${JOBS}"
+cmake --build "${BUILD_DIR}" --target package -j"${JOBS}"
 
 RUN_FILE="$(find "${BUILD_DIR}" -maxdepth 2 -type f -name 'custom_opp_*.run' -print -quit)"
 if [[ -z "${RUN_FILE}" ]]; then
