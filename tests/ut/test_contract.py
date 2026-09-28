@@ -19,6 +19,7 @@ def test_required_project_files_exist():
         "runtime/memfabric310p_adapter_api.h",
         "runtime/memfabric_runtime.cpp",
         "runtime/memfabric_runtime.h",
+        "tests/run_real_machine_gate.sh",
         "tests/st/check_install.py",
         "tests/st/test_api_validation.py",
         "tests/st/test_data_path_accuracy.py",
@@ -35,12 +36,18 @@ def test_required_project_files_exist():
 
 def test_cann91_run_packaging_is_the_only_build_path():
     cmake = _text("CMakeLists.txt")
+    build = _text("build.sh")
     assert "find_package(ASC REQUIRED" in cmake
     assert "npu_op_package(${package_name}" in cmake
     assert "TYPE RUN" in cmake
     assert "npu_op_library(cust_opapi ACLNN" in cmake
     assert "PACKAGE_PATH \"op_api/lib\"" in cmake
     assert "--npu-arch=dav-2002" in cmake
+    binary_cmd = 'cmake --build "${BUILD_DIR}" --target binary'
+    package_cmd = 'cmake --build "${BUILD_DIR}" --target package'
+    assert binary_cmd in build
+    assert package_cmd in build
+    assert build.index(binary_cmd) < build.index(package_cmd)
 
 
 def test_public_api_has_aclnn_two_phase_contract():
@@ -112,6 +119,21 @@ def test_accuracy_stability_and_perf_are_independent_of_vllm():
     assert "torch.equal" in stability
     assert "dist.all_reduce" in perf
     assert "unfair allocator advantage" in perf
+
+
+def test_real_machine_gate_orders_correctness_before_performance():
+    gate = _text("tests/run_real_machine_gate.sh")
+    required = [
+        "check_install.py",
+        "test_api_validation.py",
+        "test_data_path_accuracy.py",
+        "test_two_rank_accuracy.py --q 2",
+        "test_two_rank_accuracy.py --q 1 --q 4",
+        "test_repeated_stability.py",
+        "bench_two_rank.py",
+    ]
+    positions = [gate.index(token) for token in required]
+    assert positions == sorted(positions)
 
 
 def test_install_and_st_use_installed_custom_opp():
