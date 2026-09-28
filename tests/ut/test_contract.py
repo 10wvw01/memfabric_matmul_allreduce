@@ -19,6 +19,8 @@ def test_required_project_files_exist():
         "runtime/memfabric310p_adapter_api.h",
         "runtime/memfabric_runtime.cpp",
         "runtime/memfabric_runtime.h",
+        "tests/st/check_install.py",
+        "tests/st/test_data_path_accuracy.py",
         "tests/st/test_two_rank_accuracy.py",
         "tests/perf/bench_two_rank.py",
         "docs/design.md",
@@ -92,8 +94,23 @@ def test_v8_data_path_invariants_are_preserved():
 
 def test_accuracy_and_perf_are_independent_of_vllm():
     accuracy = _text("tests/st/test_two_rank_accuracy.py")
+    data_path = _text("tests/st/test_data_path_accuracy.py")
     perf = _text("tests/perf/bench_two_rank.py")
-    assert "vllm" not in accuracy.lower()
-    assert "vllm" not in perf.lower()
+    for text in (accuracy, data_path, perf):
+        assert "vllm" not in text.lower()
     assert "torch.equal" in accuracy
+    assert "torch.equal" in data_path
+    assert "source_rank" in data_path
+    assert "peer-payload" in data_path
     assert "dist.all_reduce" in perf
+
+
+def test_install_and_st_use_installed_custom_opp():
+    install = _text("tests/st/check_install.py")
+    caller = _text("tests/common/mfmc2_ctypes.py")
+    assert "ASCEND_CUSTOM_OPP_PATH" in install
+    assert "libcust_opapi.so" in install
+    assert "mfmc2RuntimeAbiVersion" in install
+    assert "ASCEND_CUSTOM_OPP_PATH" in caller
+    assert "aclnnMemFabricMatmulAllReduceGetWorkspaceSize" in caller
+    assert "aclnnMemFabricMatmulAllReduce" in caller
