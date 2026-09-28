@@ -129,9 +129,9 @@ def main() -> None:
 
     selected = args.q or [2, 1, 4]
     matrices = {
-        1: [255, 256, 257],
-        2: [255, 256, 257, 511, 512, 513],
-        4: [255, 256, 257, 1023, 1024, 1025],
+        1: [1, 255, 256, 257],
+        2: [1, 255, 256, 257, 511, 512, 513],
+        4: [1, 255, 256, 257, 1023, 1024, 1025],
     }
     for q in selected:
         # The persistent runtime fixes q for a worker lifetime, so every q is
