@@ -47,6 +47,7 @@ python3 -m pytest tests/ut -q
 ./build_out/custom_opp_*.run --install-path=/opt/memfabric_mc2
 source /opt/memfabric_mc2/vendors/memfabric_mc2/bin/set_env.bash
 python3 tests/st/check_install.py
+python3 tests/st/test_api_validation.py
 ```
 
 The target machine must also satisfy the MemFabric 310P platform/AICPU/orchestrator prerequisites. The custom OPP bundles the public host library, but it does not claim to replace system-level MemFabric device deployment. `check_install.py` first verifies ELF closure/API/ABI; functional ST then verifies the actual device path.
@@ -78,6 +79,16 @@ python3 tests/perf/bench_two_rank.py --q 2 --warmup 20 --iters 100
 
 Baseline is stock NZ `linear + HCCL all_reduce`; fused is the independent custom OPP. Report the slower rank median/p95. Reproduce `docs/migration_baseline_v8.md` before accepting the migration and capture a CANN profiler timeline proving `MM(n+1) || SDMA(n)` remains present.
 
+## One-command pre-vLLM hardware gate
+
+After build/install/source:
+
+```bash
+bash tests/run_real_machine_gate.sh
+```
+
+It runs static contracts → installed OPP/API/ABI → isolated local-MM/peer-payload correctness → q=2 → q=1/4 → repeated 1000 → standalone performance. Profiler and vLLM E2E remain explicit subsequent gates.
+
 ## vLLM integration
 
 Install/source this custom OPP **before importing/starting vLLM**. The adapted vLLM branch dynamically verifies both ACLNN symbols and runtime ABI=1. If the package is absent or incompatible, it keeps stock matmul + HCCL and does not disable the generic TP reduction.
@@ -94,7 +105,7 @@ The old `VLLM_ASCEND_310P_MEMFABRIC_STORE_URL` and `VLLM_ASCEND_310P_MEMFABRIC_L
 ## Acceptance sequence
 
 1. build `.run` with CANN 9.1.0;
-2. install and run `tests/st/check_install.py`;
+2. install and run `tests/st/check_install.py` + `tests/st/test_api_validation.py`;
 3. isolated local-MM / peer-payload bit-exact test;
 4. q=2 full correctness matrix;
 5. q=1 and q=4 matrices;
